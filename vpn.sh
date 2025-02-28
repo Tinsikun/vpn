@@ -16,15 +16,17 @@ ENABLE_BBR=true
 XRAY_CONFIG="/usr/local/etc/xray/config.json"
 UPDATE_SCRIPT="/usr/local/etc/xray-script/update-dat.sh"
 QR_CODE_FILE="/tmp/xray_qr.png"
+TEMP_LOG="/tmp/xray_install.log"
 
 # 函数：错误处理
 error_exit() {
     echo "错误：$1" >&2
+    [ -f "$TEMP_LOG" ] && { echo "安装日志：" >&2; cat "$TEMP_LOG" >&2; }
     exit 1
 }
 
 # 检查必要命令并安装
-for cmd in curl unzip systemctl awk qrencode; do
+for cmd in curl unzip systemctl awk qrencode jq; do
     command -v "$cmd" >/dev/null 2>&1 || { apt-get install -y -qq "$cmd" || error_exit "$cmd 未安装"; }
 done
 
@@ -32,7 +34,9 @@ done
 apt-get update -qq && apt-get upgrade -y -qq || error_exit "系统更新失败"
 
 # 安装 Xray
-bash -c "$(curl -fsSL https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" -- -q || error_exit "Xray 安装失败"
+INSTALL_SCRIPT=$(curl -fsSL https://github.com/XTLS/Xray-install/raw/main/install-release.sh) || error_exit "下载 Xray 安装脚本失败"
+echo "$INSTALL_SCRIPT" | bash -s -- -q >"$TEMP_LOG" 2>&1 || error_exit "Xray 安装失败"
+[ -x /usr/local/bin/xray ] || error_exit "Xray 可执行文件未找到"
 
 # 生成配置
 UUID=$(cat /proc/sys/kernel/random/uuid) || error_exit "UUID 生成失败"
@@ -128,7 +132,7 @@ fi
 VPN_LINK="vless://$UUID@$SERVER_IP:443?security=reality&encryption=none&flow=xtls-rprx-vision#My-VPN"
 qrencode -o "$QR_CODE_FILE" "$VPN_LINK" || error_exit "二维码生成失败"
 
-# 输出结果
+# 输出结果并清理临时文件
 echo "VPN 配置链接：$VPN_LINK"
 echo "二维码已保存至：$QR_CODE_FILE"
-echo "可用 'cat $QR_CODE_FILE' 查看二维码，或将其传输到本地查看"
+[ -f "$TEMP_LOG" ] && rm -f "$TEMP_LOG"
