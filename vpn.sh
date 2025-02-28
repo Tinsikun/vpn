@@ -4,9 +4,10 @@
 # 可自定义配置以下变量，以满足不同需求
 
 XRAY_VERSION="latest"      # Xray 版本，可选 "latest" 或指定版本号，例如 "v1.8.5"
-REALITY_DEST="www.baidu.com:443" # Reality 目标地址，推荐使用常用域名和端口
-REALITY_SNI="www.baidu.com"   # Reality SNI，需与 REALITY_DEST 的域名一致
-DNS_SERVERS=("1.1.1.1" "1.0.0.1" "8.8.8.8" "8.8.4.4" "223.5.5.5") # DNS 服务器列表，可自定义
+REALITY_DEST="addons.mozilla.org:443" # Reality 目标地址，推荐使用常用域名和端口
+REALITY_SNI="addons.mozilla.org"   # Reality SNI，需与 REALITY_DEST 的域名一致
+DNS_SERVERS=("8.8.8.8" "8.8.4.4" "223.5.5.5" "1.1.1.1" "1.0.0.1") # DNS 服务器列表，可自定义
+ADDITIONAL_BLOCKED_DOMAINS=("account.listary.com" "example.com" "another-example.org") # 额外封锁的域名列表，可以添加更多域名
 BLOCK_AD_DOMAINS="geosite:category-ads-all" # 广告域名 GeoSite 规则，可自定义
 DIRECT_CN_IP=true           # 国内 IP 是否直连 (true: 直连, false: 阻止)
 ENABLE_BBR=true             # 是否启用 BBR 优化 (true: 启用, false: 禁用)
@@ -23,6 +24,8 @@ fi
 XRAY_CONFIG="/usr/local/etc/xray/config.json"
 UPDATE_SCRIPT="/usr/local/etc/xray-script/update-dat.sh"
 DNS_SERVERS_STRING=$(IFS=","; echo -s "${DNS_SERVERS[*]}") # 将 DNS 服务器数组转换为字符串
+ADDITIONAL_BLOCKED_DOMAINS_STRING=$(IFS=","; echo -s "${ADDITIONAL_BLOCKED_DOMAINS[*]}") # 新增：将 ADDITIONAL_BLOCKED_DOMAINS 数组转换为字符串
+BLOCK_AD_DOMAINS_STRING="${BLOCK_AD_DOMAINS}" # 确保 BLOCK_AD_DOMAINS 变量为字符串
 
 # 函数：错误处理
 error_exit() {
@@ -82,7 +85,11 @@ cat > "$XRAY_CONFIG" <<EOF
         "ip": ["geoip:cn"],
         "outboundTag": "$(if ${DIRECT_CN_IP}; then echo "direct"; else echo "block"; fi)"
       },
-      {"type": "field", "domain": ["$BLOCK_AD_DOMAINS"], "outboundTag": "block"}
+      {
+        "type": "field",
+        "domain": [ $BLOCK_AD_DOMAINS_STRING, "$BLOCK_AD_DOMAINS_STRING" ], # 修改后的 domain 规则，同时使用自定义域名列表和广告域名规则
+        "outboundTag": "block"
+      }
     ]
   },
   "inbounds": [{
