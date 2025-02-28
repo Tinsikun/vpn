@@ -3,8 +3,9 @@
 # 更新系统
 sudo apt update -y && sudo apt upgrade -y
 
-# 安装 unzip (如果不存在)
+# 安装 unzip 和 qrencode (如果不存在)
 command -v unzip >/dev/null || sudo apt install unzip -y
+command -v qrencode >/dev/null || sudo apt install qrencode -y
 
 # 安装 Xray
 bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)"
@@ -29,6 +30,25 @@ echo "Server IP: $SERVER_IP"
 
 # 配置 Xray
 CONFIG_FILE="/usr/local/etc/xray/config.json"
+
+# 定义需要屏蔽的域名
+BLOCKED_DOMAINS=("account.listary.com" "example.com" "example.org")
+
+# 构建屏蔽规则
+ROUTE_RULES=""
+for domain in "${BLOCKED_DOMAINS[@]}"; do
+    ROUTE_RULES="$ROUTE_RULES
+      {
+        \"type\": \"field\",
+        \"domain\": [\"$domain\"],
+        \"outboundTag\": \"block\"
+      },"
+done
+
+# 移除最后一个逗号
+ROUTE_RULES=$(echo "$ROUTE_RULES" | sed 's/,$//')
+
+# 写入配置文件
 cat > $CONFIG_FILE <<EOF
 {
   "log": {
@@ -71,7 +91,8 @@ cat > $CONFIG_FILE <<EOF
         "type": "field",
         "domain": ["geosite:category-ads-all"],
         "outboundTag": "block"
-      }
+      },
+      $ROUTE_RULES
     ]
   },
   "inbounds": [
@@ -184,5 +205,4 @@ VPN_LINK="vless://$UUID@$SERVER_IP:443?security=reality&encryption=none&pbk=$PUB
 echo "VPN Link: $VPN_LINK"
 
 # 安装 qrencode 并生成二维码
-apt install qrencode -y
 qrencode -o - -t ANSIUTF8 "$VPN_LINK"
