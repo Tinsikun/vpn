@@ -42,12 +42,12 @@ echo "Server IP: $SERVER_IP"
 CONFIG_FILE="/usr/local/etc/xray/config.json"
 
 # 定义需要屏蔽的域名
-BLOCKED_DOMAINS=("account.listary.com" "example.com" "example.org")
+BLOCKED_DOMAINS=("account.listary.com")
 
 # 构建屏蔽规则
 ROUTE_RULES=""
 for domain in "${BLOCKED_DOMAINS[@]}"; do
-    ROUTE_RULES="$ROUTE_RULES
+    ROUTE_RULES+="
       {
         \"type\": \"field\",
         \"domain\": [\"$domain\"],
@@ -55,8 +55,8 @@ for domain in "${BLOCKED_DOMAINS[@]}"; do
       },"
 done
 
-# 移除最后一个逗号
-ROUTE_RULES=$(echo "$ROUTE_RULES" | sed 's/,$//')
+# 去除最后一个逗号
+ROUTE_RULES="${ROUTE_RULES%,}"
 
 # 写入配置文件
 cat > $CONFIG_FILE <<EOF
