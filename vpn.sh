@@ -3,14 +3,14 @@
 # --------------------- 脚本配置区 ---------------------
 # 可自定义配置以下变量，以满足不同需求
 
-XRAY_VERSION="latest"      # Xray 版本，可选 "latest" 或指定版本号，例如 "v1.8.5"
+XRAY_VERSION="latest"     # Xray 版本，可选 "latest" 或指定版本号，例如 "v1.8.5"
 REALITY_DEST="addons.mozilla.org:443" # Reality 目标地址，推荐使用常用域名和端口
-REALITY_SNI="addons.mozilla.org"   # Reality SNI，需与 REALITY_DEST 的域名一致
+REALITY_SNI="addons.mozilla.org"    # Reality SNI，需与 REALITY_DEST 的域名一致
 DNS_SERVERS=("8.8.8.8" "8.8.4.4" "223.5.5.5" "1.1.1.1" "1.0.0.1") # DNS 服务器列表，可自定义
 ADDITIONAL_BLOCKED_DOMAINS=("account.listary.com" "example.com" "another-example.org") # 额外封锁的域名列表，可以添加更多域名
 BLOCK_AD_DOMAINS="geosite:category-ads-all" # 广告域名 GeoSite 规则，可自定义
-DIRECT_CN_IP=true           # 国内 IP 是否直连 (true: 直连, false: 阻止)
-ENABLE_BBR=true             # 是否启用 BBR 优化 (true: 启用, false: 禁用)
+DIRECT_CN_IP=true          # 国内 IP 是否直连 (true: 直连, false: 阻止)
+ENABLE_BBR=true            # 是否启用 BBR 优化 (true: 启用, false: 禁用)
 
 # --------------------- 代码执行区 (以下内容非必要不建议修改) ---------------------
 
