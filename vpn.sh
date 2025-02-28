@@ -7,6 +7,16 @@ sudo apt update -y && sudo apt upgrade -y
 command -v unzip >/dev/null || sudo apt install unzip -y
 command -v qrencode >/dev/null || sudo apt install qrencode -y
 
+# 停止 Xray 服务，防止在修改配置时出错
+systemctl stop xray
+
+# 删除旧的 Xray 配置文件，防止因错误配置导致启动失败
+CONFIG_FILE="/usr/local/etc/xray/config.json"
+if [ -f "$CONFIG_FILE" ]; then
+    echo "删除旧的 Xray 配置文件..."
+    rm -f "$CONFIG_FILE"
+fi
+
 # 安装 Xray
 bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)"
 
