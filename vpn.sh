@@ -33,9 +33,8 @@ done
 # 静默更新系统
 apt-get update -qq && apt-get upgrade -y -qq || error_exit "系统更新失败"
 
-# 安装 Xray
-INSTALL_SCRIPT=$(curl -fsSL https://github.com/XTLS/Xray-install/raw/main/install-release.sh) || error_exit "下载 Xray 安装脚本失败"
-echo "$INSTALL_SCRIPT" | bash -s -- -q >"$TEMP_LOG" 2>&1 || error_exit "Xray 安装失败"
+# 安装 Xray（使用官方命令）
+bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install >"$TEMP_LOG" 2>&1 || error_exit "Xray 安装失败"
 [ -x /usr/local/bin/xray ] || error_exit "Xray 可执行文件未找到"
 
 # 生成配置
