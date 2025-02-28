@@ -23,8 +23,8 @@ fi
 # 设置变量 (部分变量已在配置区定义)
 XRAY_CONFIG="/usr/local/etc/xray/config.json"
 UPDATE_SCRIPT="/usr/local/etc/xray-script/update-dat.sh"
-DNS_SERVERS_STRING=$(IFS=","; echo -s "${DNS_SERVERS[*]}") # 将 DNS 服务器数组转换为字符串
-ADDITIONAL_BLOCKED_DOMAINS_STRING=$(IFS=","; echo -s "${ADDITIONAL_BLOCKED_DOMAINS[*]}") # 新增：将 ADDITIONAL_BLOCKED_DOMAINS 数组转换为字符串
+DNS_SERVERS_STRING=$(IFS=","; echo "${DNS_SERVERS[*]}") # 将 DNS 服务器数组转换为字符串
+ADDITIONAL_BLOCKED_DOMAINS_STRING=$(IFS=","; echo "${ADDITIONAL_BLOCKED_DOMAINS[*]}") # 将额外封锁域名列表转换为字符串
 BLOCK_AD_DOMAINS_STRING="${BLOCK_AD_DOMAINS}" # 确保 BLOCK_AD_DOMAINS 变量为字符串
 
 # 函数：错误处理
@@ -49,10 +49,10 @@ apt upgrade -y || error_exit "apt upgrade 失败"
 check_command unzip || apt install unzip -y || error_exit "unzip 安装失败"
 
 # 安装 Xray
-bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)"
+bash -c "$(curl -fsSL https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" || error_exit "Xray 安装失败"
 
 # 检查 Xray 版本
-xray version
+xray version || error_exit "Xray 版本检查失败"
 
 # 生成 UUID 和 Reality 密钥对
 UUID=$(cat /proc/sys/kernel/random/uuid) || error_exit "UUID 生成失败"
@@ -87,7 +87,7 @@ cat > "$XRAY_CONFIG" <<EOF
       },
       {
         "type": "field",
-        "domain": [ $BLOCK_AD_DOMAINS_STRING, "$BLOCK_AD_DOMAINS_STRING" ], # 修改后的 domain 规则，同时使用自定义域名列表和广告域名规则
+        "domain": [ $BLOCK_AD_DOMAINS_STRING, "$BLOCK_AD_DOMAINS_STRING" ], 
         "outboundTag": "block"
       }
     ]
@@ -125,9 +125,9 @@ EOF
 systemctl restart xray && systemctl enable xray || error_exit "Xray 服务启动失败"
 
 # 检查 Xray 状态
-systemctl status xray
+systemctl status xray || error_exit "Xray 服务状态检查失败"
 
-# 创建更新 dat 文件的脚本 (与新原代码一致)
+# 创建更新 dat 文件的脚本
 mkdir -p /usr/local/etc/xray-script
 cat > "$UPDATE_SCRIPT" <<EOF
 #!/usr/bin/env bash
@@ -137,21 +137,21 @@ GEOIP_URL="https://github.com/Loyalsoldier/v2ray-rules-dat/raw/release/geoip.dat
 GEOSITE_URL="https://github.com/Loyalsoldier/v2ray-rules-dat/raw/release/geosite.dat"
 [ -d "\$XRAY_DIR" ] || mkdir -p "\$XRAY_DIR"
 cd "\$XRAY_DIR"
-curl -L -o geoip.dat.new "\$GEOIP_URL"
-curl -L -o geosite.dat.new "\$GEOSITE_URL"
+curl -fsSL -o geoip.dat.new "\$GEOIP_URL"
+curl -fsSL -o geosite.dat.new "\$GEOSITE_URL"
 rm -f geoip.dat geosite.dat
 mv geoip.dat.new geoip.dat
 mv geosite.dat.new geosite.dat
 sudo systemctl -q is-active xray && sudo systemctl restart xray
 EOF
 
-# 赋予更新脚本可执行权限 (与新原代码一致)
+# 赋予更新脚本可执行权限
 chmod +x "$UPDATE_SCRIPT" || error_exit "更新脚本授权失败"
 
-# 执行一次更新脚本 (与新原代码一致)
+# 执行一次更新脚本
 "$UPDATE_SCRIPT" || error_exit "更新脚本执行失败"
 
-# 设置 crontab 每周一 23:00 执行更新 (与新原代码一致)
+# 设置 crontab 每周一 23:00 执行更新
 (crontab -l 2>/dev/null; echo "00 23 * * 1 sudo $UPDATE_SCRIPT >/dev/null 2>&1") | crontab - || error_exit "Crontab 设置失败"
 
 # 优化网络参数 (可配置是否启用 BBR)
@@ -173,17 +173,8 @@ else
   echo "BBR 未启用，网络参数优化已跳过。"
 fi
 
-
 # 生成 VPN 配置链接
-VPN_LINK="vless://$UUID@$SERVER_IP:443?security=reality&encryption=none&pbk=$PUBLIC_KEY&headerType=none&fp=chrome&type=tcp&flow=xtls-rprx-vision&sni=$REALITY_SNI#Xray-Reality"
-echo "VPN Link: $VPN_LINK"
+VPN_LINK="vless://$UUID@$SERVER_IP:443?security=reality&encryption=none&flow=xtls-rprx-vision#My-VPN"
 
-# 安装 qrencode 并生成二维码
-apt install qrencode -y || error_exit "qrencode 安装失败"
-qrencode -o - -t ANSIUTF8 "$VPN_LINK"
-
-echo -e "\n🎉 VPN 创建完成！🎉"
-echo -e "\n🚀 VPN 配置链接 (请复制到您的客户端):"
-echo "$VPN_LINK"
-echo -e "\n🖼️  VPN 配置二维码 (请使用客户端扫描):"
-echo -e "\n✅  VPS 搭建完成！享受快速、稳定、高效的VPN服务吧！"
+# 打印 VPN 配置链接
+echo -e "\nVPN 配置链接：$VPN_LINK"
