@@ -49,7 +49,7 @@ apt upgrade -y || error_exit "apt upgrade 失败"
 check_command unzip || apt install unzip -y || error_exit "unzip 安装失败"
 
 # 安装 Xray
-bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
+bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)"
 
 # 检查 Xray 版本
 xray version
