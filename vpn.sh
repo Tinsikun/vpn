@@ -1,187 +1,182 @@
 #!/bin/bash
 
+# --------------------- 脚本配置区 ---------------------
+# 可自定义配置以下变量，以满足不同需求
+
+XRAY_VERSION="latest"      # Xray 版本，可选 "latest" 或指定版本号，例如 "v1.8.5"
+REALITY_DEST="www.baidu.com:443" # Reality 目标地址，推荐使用常用域名和端口
+REALITY_SNI="www.baidu.com"   # Reality SNI，需与 REALITY_DEST 的域名一致
+DNS_SERVERS=("1.1.1.1" "1.0.0.1" "8.8.8.8" "8.8.4.4" "223.5.5.5") # DNS 服务器列表，可自定义
+BLOCK_AD_DOMAINS="geosite:category-ads-all" # 广告域名 GeoSite 规则，可自定义
+DIRECT_CN_IP=true           # 国内 IP 是否直连 (true: 直连, false: 阻止)
+ENABLE_BBR=true             # 是否启用 BBR 优化 (true: 启用, false: 禁用)
+
+# --------------------- 代码执行区 (以下内容非必要不建议修改) ---------------------
+
+# 检查是否以 root 权限运行
+if [[ "$EUID" -ne 0 ]]; then
+  echo "错误：请使用 sudo 或 root 权限运行此脚本。"
+  exit 1
+fi
+
+# 设置变量 (部分变量已在配置区定义)
+XRAY_CONFIG="/usr/local/etc/xray/config.json"
+UPDATE_SCRIPT="/usr/local/etc/xray-script/update-dat.sh"
+DNS_SERVERS_STRING=$(IFS=","; echo -s "${DNS_SERVERS[*]}") # 将 DNS 服务器数组转换为字符串
+
+# 函数：错误处理
+error_exit() {
+  echo -e "\n脚本执行出错，错误信息：$1"
+  exit 1
+}
+
+# 函数：检查命令是否安装
+check_command() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo -e "错误：命令 '$1' 未安装，请先安装。"
+    exit 1
+  fi
+}
+
 # 更新系统
-sudo apt update -y && sudo apt upgrade -y
+apt update -y || error_exit "apt update 失败"
+apt upgrade -y || error_exit "apt upgrade 失败"
+
+# 安装 unzip (如果不存在)
+check_command unzip || apt install unzip -y || error_exit "unzip 安装失败"
 
 # 安装 Xray
-bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
+bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install -version "$XRAY_VERSION" || error_exit "Xray 安装失败"
 
 # 检查 Xray 版本
 xray version
 
-# 生成 UUID
-UUID=$(cat /proc/sys/kernel/random/uuid)
-echo "UUID: $UUID"
-
-# 生成 Reality 密钥对
-KEYS=$(xray x25519)
+# 生成 UUID 和 Reality 密钥对
+UUID=$(cat /proc/sys/kernel/random/uuid) || error_exit "UUID 生成失败"
+KEYS=$(xray x25519) || error_exit "Reality 密钥对生成失败"
 PRIVATE_KEY=$(echo "$KEYS" | grep "Private key" | awk '{print $3}')
 PUBLIC_KEY=$(echo "$KEYS" | grep "Public key" | awk '{print $3}')
-echo "Private key: $PRIVATE_KEY"
-echo "Public key: $PUBLIC_KEY"
 
 # 获取服务器 IP
-SERVER_IP=$(curl -s https://api.ipify.org)
-echo "Server IP: $SERVER_IP"
+SERVER_IP=$(curl -s https://api.ipify.org) || error_exit "获取服务器 IP 失败"
 
 # 配置 Xray
-CONFIG_FILE="/usr/local/etc/xray/config.json"
-cat > $CONFIG_FILE <<EOF
+cat > "$XRAY_CONFIG" <<EOF
 {
   "log": {
     "loglevel": "warning"
   },
   "dns": {
-    "hosts": {
-      "example.com": "1.2.3.4",
-      "example.org": "5.6.7.8"
-    },
-    "servers": [
-      "8.8.8.8",
-      "8.8.4.4",
-      "1.1.1.1",
-      "1.0.0.1",
-      "114.114.114.114",
-      "223.5.5.5",
-      "9.9.9.9"
-    ],
+    "hosts": {},
+    "servers": [ $DNS_SERVERS_STRING ],
     "client": "1.1.1.1",
     "prefetch": true
   },
   "routing": {
     "domainStrategy": "IPIfNonMatch",
     "rules": [
-      {
-        "type": "field",
-        "protocol": ["bittorrent"],
-        "outboundTag": "block"
-      },
-      {
-        "type": "field",
-        "ip": ["geoip:private"],
-        "outboundTag": "block"
-      },
+      {"type": "field", "protocol": ["bittorrent"], "outboundTag": "block"},
+      {"type": "field", "ip": ["geoip:private"], "outboundTag": "block"},
       {
         "type": "field",
         "ip": ["geoip:cn"],
-        "outboundTag": "block"
+        "outboundTag": "$(if ${DIRECT_CN_IP}; then echo "direct"; else echo "block"; fi)"
       },
-      {
-        "type": "field",
-        "domain": ["geosite:category-ads-all"],
-        "outboundTag": "block"
-      }
+      {"type": "field", "domain": ["$BLOCK_AD_DOMAINS"], "outboundTag": "block"}
     ]
   },
-  "inbounds": [
-    {
-      "tag": "xray-xtls-reality",
-      "listen": "0.0.0.0",
-      "port": 443,
-      "protocol": "vless",
-      "settings": {
-        "clients": [
-          {
-            "id": "$UUID",
-            "flow": "xtls-rprx-vision"
-          }
-        ],
-        "decryption": "none"
-      },
-      "streamSettings": {
-        "network": "tcp",
-        "security": "reality",
-        "realitySettings": {
-          "dest": "addons.mozilla.org:443",
-          "serverNames": ["addons.mozilla.org"],
-          "privateKey": "$PRIVATE_KEY",
-          "shortIds": [""]
-        }
-      },
-      "sniffing": {
-        "enabled": true,
-        "destOverride": ["http", "tls", "quic"]
-      },
-      "workers": 4
-    }
-  ],
-  "outbounds": [
-    {
-      "protocol": "freedom",
-      "tag": "direct"
+  "inbounds": [{
+    "tag": "xray-xtls-reality",
+    "listen": "0.0.0.0",
+    "port": 443,
+    "protocol": "vless",
+    "settings": {
+      "clients": [{"id": "$UUID", "flow": "xtls-rprx-vision"}],
+      "decryption": "none"
     },
-    {
-      "protocol": "blackhole",
-      "tag": "block"
-    }
+    "streamSettings": {
+      "network": "tcp",
+      "security": "reality",
+      "realitySettings": {
+        "dest": "$REALITY_DEST",
+        "serverNames": ["$REALITY_SNI"],
+        "privateKey": "$PRIVATE_KEY",
+        "shortIds": [""]
+      }
+    },
+    "sniffing": {"enabled": true, "destOverride": ["http", "tls", "quic"]},
+    "workers": 4
+  }],
+  "outbounds": [
+    {"protocol": "freedom", "tag": "direct"},
+    {"protocol": "blackhole", "tag": "block"}
   ]
 }
 EOF
 
 # 启动 Xray 服务
-systemctl restart xray && systemctl enable xray
+systemctl restart xray && systemctl enable xray || error_exit "Xray 服务启动失败"
 
 # 检查 Xray 状态
 systemctl status xray
 
-# 创建更新 dat 文件的脚本
+# 创建更新 dat 文件的脚本 (与新原代码一致)
 mkdir -p /usr/local/etc/xray-script
-cat > /usr/local/etc/xray-script/update-dat.sh <<EOF
+cat > "$UPDATE_SCRIPT" <<EOF
 #!/usr/bin/env bash
-
 set -e
-
 XRAY_DIR="/usr/local/share/xray"
-
 GEOIP_URL="https://github.com/Loyalsoldier/v2ray-rules-dat/raw/release/geoip.dat"
 GEOSITE_URL="https://github.com/Loyalsoldier/v2ray-rules-dat/raw/release/geosite.dat"
-
-[ -d \$XRAY_DIR ] || mkdir -p \$XRAY_DIR
-cd \$XRAY_DIR
-
-curl -L -o geoip.dat.new \$GEOIP_URL
-curl -L -o geosite.dat.new \$GEOSITE_URL
-
+[ -d "\$XRAY_DIR" ] || mkdir -p "\$XRAY_DIR"
+cd "\$XRAY_DIR"
+curl -L -o geoip.dat.new "\$GEOIP_URL"
+curl -L -o geosite.dat.new "\$GEOSITE_URL"
 rm -f geoip.dat geosite.dat
-
 mv geoip.dat.new geoip.dat
 mv geosite.dat.new geosite.dat
-
-systemctl -q is-active xray && systemctl restart xray
+sudo systemctl -q is-active xray && sudo systemctl restart xray
 EOF
 
-# 赋予更新脚本可执行权限
-chmod +x /usr/local/etc/xray-script/update-dat.sh
+# 赋予更新脚本可执行权限 (与新原代码一致)
+chmod +x "$UPDATE_SCRIPT" || error_exit "更新脚本授权失败"
 
-# 执行一次更新脚本
-/usr/local/etc/xray-script/update-dat.sh
+# 执行一次更新脚本 (与新原代码一致)
+"$UPDATE_SCRIPT" || error_exit "更新脚本执行失败"
 
-# 设置 crontab 每周一 23:00 执行更新
-(crontab -l 2>/dev/null; echo "00 23 * * 1 /usr/local/etc/xray-script/update-dat.sh >/dev/null 2>&1") | crontab -
+# 设置 crontab 每周一 23:00 执行更新 (与新原代码一致)
+(crontab -l 2>/dev/null; echo "00 23 * * 1 sudo $UPDATE_SCRIPT >/dev/null 2>&1") | crontab - || error_exit "Crontab 设置失败"
 
-# 启用 BBR 并优化网络性能
-echo "net.core.default_qdisc=fq" | sudo tee -a /etc/sysctl.conf
-echo "net.ipv4.tcp_congestion_control=bbr" | sudo tee -a /etc/sysctl.conf
-cat << EOF | sudo tee -a /etc/sysctl.conf
-# TCP Fast Open
+# 优化网络参数 (可配置是否启用 BBR)
+if [ "$ENABLE_BBR" = true ]; then
+  echo "net.core.default_qdisc=fq" | sudo tee -a /etc/sysctl.conf || error_exit "网络参数优化失败"
+  echo "net.ipv4.tcp_congestion_control=bbr" | sudo tee -a /etc/sysctl.conf || error_exit "网络参数优化失败"
+  cat << EOF | sudo tee -a /etc/sysctl.conf || error_exit "网络参数优化失败"
 net.ipv4.tcp_fast_open=3
-
-# TCP 内存优化
 net.ipv4.tcp_rmem=4096 87380 16777216
 net.ipv4.tcp_wmem=4096 65536 16777216
 net.core.rmem_max=16777216
 net.core.wmem_max=16777216
-
-# UDP 加速优化
 net.ipv4.udp_rmem_min=4096
 net.ipv4.udp_wmem_min=4096
 EOF
-sysctl -p
+  sysctl -p || error_exit "网络参数应用失败"
+  echo "BBR 已启用，网络参数已优化。"
+else
+  echo "BBR 未启用，网络参数优化已跳过。"
+fi
+
 
 # 生成 VPN 配置链接
-VPN_LINK="vless://$UUID@$SERVER_IP:443?security=reality&encryption=none&pbk=$PUBLIC_KEY&headerType=none&fp=chrome&type=tcp&flow=xtls-rprx-vision&sni=addons.mozilla.org#Xray-Reality"
+VPN_LINK="vless://$UUID@$SERVER_IP:443?security=reality&encryption=none&pbk=$PUBLIC_KEY&headerType=none&fp=chrome&type=tcp&flow=xtls-rprx-vision&sni=$REALITY_SNI#Xray-Reality"
 echo "VPN Link: $VPN_LINK"
 
 # 安装 qrencode 并生成二维码
-apt install qrencode -y
+apt install qrencode -y || error_exit "qrencode 安装失败"
 qrencode -o - -t ANSIUTF8 "$VPN_LINK"
+
+echo -e "\n🎉 VPN 创建完成！🎉"
+echo -e "\n🚀 VPN 配置链接 (请复制到您的客户端):"
+echo "$VPN_LINK"
+echo -e "\n🖼️  VPN 配置二维码 (请使用客户端扫描):"
+echo -e "\n✅  VPS 搭建完成！享受快速、稳定、高效的VPN服务吧！"
