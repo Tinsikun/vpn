@@ -7,7 +7,7 @@ sudo apt update -y && sudo apt upgrade -y
 command -v unzip >/dev/null || sudo apt install unzip -y
 
 # 安装 Xray
-bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
+bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)"
 
 # 检查 Xray 版本
 xray version
