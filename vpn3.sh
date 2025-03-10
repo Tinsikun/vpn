@@ -1,205 +1,223 @@
 #!/bin/bash
 
 # 一键部署 Xray VPN 脚本
-# 该脚本将自动安装和配置 Xray VPN 服务，生成 VPN 链接和二维码图片。
-# 请在 Ubuntu 或 Debian 系统上以 root 用户运行此脚本。
-# 依赖：curl、qrencode、systemctl
+# 全局变量：定义域名，只需修改此处即可
+DOMAIN="addons.mozilla.org"
 
-# 函数：检查命令执行结果
-check_command() {
-    if [ $? -ne 0 ]; then
-        echo "错误：$1 失败，请检查服务器环境后重试。"
-        exit 1
-    fi
-}
+# 更新系统
+sudo apt update -y && sudo apt upgrade -y
 
-echo "开始部署 Xray VPN..."
+# 安装 unzip 和 qrencode (如果不存在)
+command -v unzip >/dev/null || sudo apt install unzip -y
+command -v qrencode >/dev/null || sudo apt install qrencode -y
 
-# 1. 系统更新（自动选择包维护者的配置文件版本）
-echo "正在更新系统..."
-export DEBIAN_FRONTEND=noninteractive
-apt update -y && apt upgrade -y -o Dpkg::Options::="--force-confnew"
-check_command "系统更新"
+# 停止 Xray 服务，防止在修改配置时出错
+systemctl stop xray
 
-# 2. 安装 Xray
-echo "正在安装 Xray..."
-bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
-check_command "Xray 安装"
+# 删除旧的 Xray 配置文件，防止因错误配置导致启动失败
+CONFIG_FILE="/usr/local/etc/xray/config.json"
+if [ -f "$CONFIG_FILE" ]; then
+    echo "删除旧的 Xray 配置文件..."
+    rm -f "$CONFIG_FILE"
+fi
+
+# 安装 Xray
+bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)"
+
+# 检查 Xray 版本
 xray version
 
-# 3. 生成 UUID 和 Reality 密钥
-echo "正在生成 UUID 和密钥..."
+# 生成 UUID
 UUID=$(cat /proc/sys/kernel/random/uuid)
-echo "生成的 UUID: $UUID"
+echo "UUID: $UUID"
 
-KEY_PAIR=$(xray x25519)
-PRIVATE_KEY=$(echo "$KEY_PAIR" | grep "Private key" | awk '{print $3}')
-PUBLIC_KEY=$(echo "$KEY_PAIR" | grep "Public key" | awk '{print $3}')
-echo "生成的私钥: $PRIVATE_KEY"
-echo "生成的公钥: $PUBLIC_KEY"
+# 生成 Reality 密钥对
+KEYS=$(xray x25519)
+PRIVATE_KEY=$(echo "$KEYS" | grep "Private key" | awk '{print $3}')
+PUBLIC_KEY=$(echo "$KEYS" | grep "Public key" | awk '{print $3}')
+echo "Private key: $PRIVATE_KEY"
+echo "Public key: $PUBLIC_KEY"
 
-# 4. 配置 Xray
-echo "正在配置 Xray..."
+# 获取服务器 IP
+SERVER_IP=$(curl -s https://api.ipify.org)
+echo "Server IP: $SERVER_IP"
+
+# 配置 Xray
 CONFIG_FILE="/usr/local/etc/xray/config.json"
-SNI="dl.google.com"  # 主 SNI，与 VPN 链接一致
-cat > $CONFIG_FILE <<EOL
+
+# 定义需要屏蔽的域名
+BLOCKED_DOMAINS=("account.listary.com")
+
+# 构建屏蔽规则
+ROUTE_RULES=""
+for domain in "${BLOCKED_DOMAINS[@]}"; do
+    ROUTE_RULES+="
+      {
+        \"type\": \"field\",
+        \"domain\": [\"$domain\"],
+        \"outboundTag\": \"block\"
+      },"
+done
+
+# 去除最后一个逗号
+ROUTE_RULES="${ROUTE_RULES%,}"
+
+# 写入配置文件
+cat > $CONFIG_FILE <<EOF
 {
-    "log": {
-        "loglevel": "warning"
+  "log": {
+    "loglevel": "warning"
+  },
+  "dns": {
+    "hosts": {
+      "example.com": "1.2.3.4",
+      "example.org": "5.6.7.8"
     },
-    "dns": {
-        "servers": [
-            "https+local://dns.google/dns-query",
-            "https+local://dns.alidns.com/dns-query"
+    "servers": [
+      "8.8.8.8",
+      "8.8.4.4",
+      "1.1.1.1",
+      "1.0.0.1",
+      "223.5.5.5"
+    ],
+    "client": "8.8.8.8",
+    "prefetch": true
+  },
+  "routing": {
+    "domainStrategy": "IPIfNonMatch",
+    "rules": [
+      {
+        "type": "field",
+        "protocol": ["bittorrent"],
+        "outboundTag": "block"
+      },
+      {
+        "type": "field",
+        "ip": ["geoip:private"],
+        "outboundTag": "block"
+      },
+      {
+        "type": "field",
+        "ip": ["geoip:cn"],
+        "outboundTag": "block"
+      },
+      {
+        "type": "field",
+        "domain": ["geosite:category-ads-all"],
+        "outboundTag": "block"
+      },
+      $ROUTE_RULES
+    ]
+  },
+  "inbounds": [
+    {
+      "tag": "xray-xtls-reality",
+      "listen": "0.0.0.0",
+      "port": 443,
+      "protocol": "vless",
+      "settings": {
+        "clients": [
+          {
+            "id": "$UUID",
+            "flow": "xtls-rprx-vision"
+          }
         ],
-        "client": "8.8.8.8",
-        "prefetch": true
-    },
-    "inbounds": [
-        {
-            "tag": "xray-xtls-reality",
-            "listen": "0.0.0.0",
-            "port": 443,
-            "protocol": "vless",
-            "settings": {
-                "clients": [
-                    {
-                        "id": "$UUID",
-                        "flow": "xtls-rprx-vision"
-                    }
-                ],
-                "decryption": "none"
-            },
-            "streamSettings": {
-                "network": "tcp",
-                "security": "reality",
-                "realitySettings": {
-                    "dest": "$SNI:443",
-                    "serverNames": [
-                        "$SNI",
-                        "play.google.com",
-                        "www.google.com",
-                        "accounts.google.com"
-                    ],
-                    "privateKey": "$PRIVATE_KEY",
-                    "shortIds": [""]
-                }
-            },
-            "sniffing": {
-                "enabled": false
-            },
-            "workers": 4
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "reality",
+        "realitySettings": {
+          "dest": "$DOMAIN:443",
+          "serverNames": ["$DOMAIN"],
+          "privateKey": "$PRIVATE_KEY",
+          "shortIds": [""]
         }
-    ],
-    "outbounds": [
-        {
-            "protocol": "freedom",
-            "tag": "direct"
-        },
-        {
-            "protocol": "blackhole",
-            "tag": "block"
-        }
-    ],
-    "routing": {
-        "domainStrategy": "IPIfNonMatch",
-        "rules": [
-            {
-                "type": "field",
-                "domain": [
-                    "geosite:google"
-                ],
-                "outboundTag": "direct"
-            }
-        ]
+      },
+      "sniffing": {
+        "enabled": true,
+        "destOverride": ["http", "tls", "quic"]
+      },
+      "workers": 4
     }
+  ],
+  "outbounds": [
+    {
+      "protocol": "freedom",
+      "tag": "direct"
+    },
+    {
+      "protocol": "blackhole",
+      "tag": "block"
+    }
+  ]
 }
-EOL
-check_command "Xray 配置"
+EOF
 
-# 5. 启动 Xray 服务
-echo "正在启动 Xray 服务..."
+# 启动 Xray 服务
 systemctl restart xray && systemctl enable xray
-check_command "Xray 服务启动"
-systemctl status xray --no-pager
 
-# 6. 设置自动更新 dat 文件
-echo "正在设置 dat 文件自动更新..."
+# 检查 Xray 状态
+systemctl status xray
+
+# 创建更新 dat 文件的脚本
 mkdir -p /usr/local/etc/xray-script
-UPDATE_SCRIPT="/usr/local/etc/xray-script/update-dat.sh"
-cat > $UPDATE_SCRIPT <<EOL
+cat > /usr/local/etc/xray-script/update-dat.sh <<EOF
 #!/usr/bin/env bash
+
 set -e
+
 XRAY_DIR="/usr/local/share/xray"
+
 GEOIP_URL="https://github.com/Loyalsoldier/v2ray-rules-dat/raw/release/geoip.dat"
 GEOSITE_URL="https://github.com/Loyalsoldier/v2ray-rules-dat/raw/release/geosite.dat"
+
 [ -d \$XRAY_DIR ] || mkdir -p \$XRAY_DIR
 cd \$XRAY_DIR
+
 curl -L -o geoip.dat.new \$GEOIP_URL
 curl -L -o geosite.dat.new \$GEOSITE_URL
+
 rm -f geoip.dat geosite.dat
+
 mv geoip.dat.new geoip.dat
 mv geosite.dat.new geosite.dat
+
 systemctl -q is-active xray && systemctl restart xray
-EOL
-chmod +x $UPDATE_SCRIPT
-check_command "更新脚本创建"
+EOF
 
-# 添加每周一 23:00 的 cron 任务
-(crontab -l 2>/dev/null; echo "00 23 * * 1 $UPDATE_SCRIPT >/dev/null 2>&1") | crontab -
-check_command "Cron 任务设置"
+# 赋予更新脚本可执行权限
+chmod +x /usr/local/etc/xray-script/update-dat.sh
 
-# 7. 启用 BBR 和网络优化
-echo "正在启用 BBR 和网络优化..."
-echo "net.core.default_qdisc=fq" | tee -a /etc/sysctl.conf
-echo "net.ipv4.tcp_congestion_control=bbr" | tee -a /etc/sysctl.conf
-echo "net.ipv4.tcp_rmem=4096 87380 16777216" | tee -a /etc/sysctl.conf
-echo "net.ipv4.tcp_wmem=4096 65536 16777216" | tee -a /etc/sysctl.conf
-echo "net.ipv4.udp_rmem_min=4096" | tee -a /etc/sysctl.conf
-echo "net.ipv4.udp_wmem_min=4096" | tee -a /etc/sysctl.conf
+# 执行一次更新脚本
+/usr/local/etc/xray-script/update-dat.sh
+
+# 设置 crontab 每周一 23:00 执行更新
+(crontab -l 2>/dev/null; echo "00 23 * * 1 /usr/local/etc/xray-script/update-dat.sh >/dev/null 2>&1") | crontab -
+
+# 启用 BBR 并优化网络性能
+echo "net.core.default_qdisc=fq" | sudo tee -a /etc/sysctl.conf
+echo "net.ipv4.tcp_congestion_control=bbr" | sudo tee -a /etc/sysctl.conf
+cat << EOF | sudo tee -a /etc/sysctl.conf
+# TCP Fast Open
+net.ipv4.tcp_fast_open=3
+
+# TCP 内存优化
+net.ipv4.tcp_rmem=4096 87380 16777216
+net.ipv4.tcp_wmem=4096 65536 16777216
+net.core.rmem_max=16777216
+net.core.wmem_max=16777216
+
+# UDP 加速优化
+net.ipv4.udp_rmem_min=4096
+net.ipv4.udp_wmem_min=4096
+EOF
 sysctl -p
-check_command "网络优化"
-echo 3 > /proc/sys/net/ipv4/tcp_fastopen
-check_command "TCP Fast Open"
 
-# 8. 获取服务器公网 IP
-echo "正在获取服务器公网 IP..."
-SERVER_IP=$(curl -s ifconfig.me)
-echo "服务器 IP: $SERVER_IP"
+# 生成 VPN 配置链接（名称改为“服务器IP+Xtls+Reality”）
+VPN_NAME="${SERVER_IP}+Xtls+Reality"
+VPN_LINK="vless://$UUID@$SERVER_IP:443?security=reality&encryption=none&pbk=$PUBLIC_KEY&headerType=none&fp=chrome&type=tcp&flow=xtls-rprx-vision&sni=$DOMAIN#$VPN_NAME"
+echo "VPN Link: $VPN_LINK"
 
-# 9. 安装 qrencode（自动处理配置文件更新）
-echo "正在安装 qrencode..."
-export DEBIAN_FRONTEND=noninteractive
-apt install -y qrencode -o Dpkg::Options::="--force-confnew"
-check_command "qrencode 安装"
-
-# 10. 生成 VPN 链接（动态名称：服务器IP+xlts-reality）
-VPN_NAME="${SERVER_IP}-xlts-reality"
-VPN_LINK="vless://$UUID@$SERVER_IP:443?type=tcp&security=reality&flow=xtls-rprx-vision&fp=chrome&sni=$SNI&pbk=$PUBLIC_KEY#$VPN_NAME"
-echo "VPN 链接: $VPN_LINK"
-
-# 11. 生成二维码图片
-QR_CODE_FILE="/tmp/vpn_qr.png"
-qrencode -o $QR_CODE_FILE "$VPN_LINK"
-check_command "二维码生成"
-echo "二维码已保存至: $QR_CODE_FILE"
-
-# 在终端显示 ASCII 码二维码
-echo "在终端显示 ASCII 码二维码："
-qrencode -t ansi "$VPN_LINK"
-
-# 12. 显示部署完成信息
-echo "----------------------------------------"
-echo "VPN 部署成功！"
-echo "请在支持 VLESS 的客户端（如 V2rayNG）中使用以下配置："
-echo "服务器 IP: $SERVER_IP"
-echo "端口: 443"
-echo "UUID: $UUID"
-echo "Flow: xtls-rprx-vision"
-echo "安全性: reality"
-echo "SNI: $SNI"
-echo "公钥: $PUBLIC_KEY"
-echo "VPN 链接: $VPN_LINK"
-echo "二维码图片路径: $QR_CODE_FILE"
-echo "----------------------------------------"
-echo "提示：二维码图片位于 $QR_CODE_FILE，可通过 SCP 或其他工具下载查看。"
+# 安装 qrencode 并生成二维码
+qrencode -o - -t ANSIUTF8 "$VPN_LINK"
