@@ -74,9 +74,9 @@ cat > $CONFIG_FILE <<EOL
                 "network": "tcp",
                 "security": "reality",
                 "realitySettings": {
-                    "dest": "addons.mozilla.org:443",
+                    "dest": "dl.google.com:443",
                     "serverNames": [
-                        "addons.mozilla.org"
+                        "dl.google.com"
                     ],
                     "privateKey": "$PRIVATE_KEY",
                     "shortIds": [
