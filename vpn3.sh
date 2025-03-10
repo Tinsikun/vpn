@@ -2,7 +2,8 @@
 
 # 一键部署 Xray VPN 脚本
 # 全局变量：定义域名，只需修改此处即可
-DOMAIN="addons.mozilla.org"
+#DOMAIN="addons.mozilla.org"
+DOMAIN="dl.google.com"
 
 # 更新系统
 sudo apt update -y && sudo apt upgrade -y
