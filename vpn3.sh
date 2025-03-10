@@ -7,6 +7,7 @@ DOMAIN="dl.google.com"
 
 # 更新系统
 sudo apt update -y && sudo apt upgrade -y
+cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
 
 # 安装 unzip 和 qrencode (如果不存在)
 command -v unzip >/dev/null || sudo apt install unzip -y
