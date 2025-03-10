@@ -15,9 +15,10 @@ check_command() {
 
 echo "开始部署 Xray VPN..."
 
-# 1. 系统更新
+# 1. 系统更新（自动选择包维护者的配置文件版本）
 echo "正在更新系统..."
-apt update -y && apt upgrade -y
+export DEBIAN_FRONTEND=noninteractive
+apt update -y && apt upgrade -y -o Dpkg::Options::="--force-confnew"
 check_command "系统更新"
 
 # 2. 安装 Xray
@@ -49,7 +50,7 @@ cat > $CONFIG_FILE <<EOL
         "servers": [
             "8.8.8.8",
             "8.8.4.4",
-            "223.5.5.5",
+            "223.5.5.5"
         ],
         "client": "8.8.8.8",
         "prefetch": true
@@ -149,9 +150,10 @@ echo "正在获取服务器公网 IP..."
 SERVER_IP=$(curl -s ifconfig.me)
 echo "服务器 IP: $SERVER_IP"
 
-# 9. 安装 qrencode
+# 9. 安装 qrencode（自动处理配置文件更新）
 echo "正在安装 qrencode..."
-apt install -y qrencode
+export DEBIAN_FRONTEND=noninteractive
+apt install -y qrencode -o Dpkg::Options::="--force-confnew"
 check_command "qrencode 安装"
 
 # 10. 生成 VPN 链接
