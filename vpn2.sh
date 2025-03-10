@@ -41,6 +41,7 @@ echo "生成的公钥: $PUBLIC_KEY"
 # 4. 配置 Xray
 echo "正在配置 Xray..."
 CONFIG_FILE="/usr/local/etc/xray/config.json"
+SNI="dl.google.com"  # 定义 SNI，与 serverNames 保持一致
 cat > $CONFIG_FILE <<EOL
 {
     "log": {
@@ -74,9 +75,9 @@ cat > $CONFIG_FILE <<EOL
                 "network": "tcp",
                 "security": "reality",
                 "realitySettings": {
-                    "dest": "dl.google.com:443",
+                    "dest": "$SNI:443",
                     "serverNames": [
-                        "dl.google.com"
+                        "$SNI"
                     ],
                     "privateKey": "$PRIVATE_KEY",
                     "shortIds": [
@@ -156,8 +157,9 @@ export DEBIAN_FRONTEND=noninteractive
 apt install -y qrencode -o Dpkg::Options::="--force-confnew"
 check_command "qrencode 安装"
 
-# 10. 生成 VPN 链接
-VPN_LINK="vless://$UUID@$SERVER_IP:443?type=tcp&security=reality&flow=xtls-rprx-vision&fp=chrome&sni=addons.mozilla.org&pbk=$PUBLIC_KEY#vpn-xlts-reality"
+# 10. 生成 VPN 链接（动态名称：服务器IP+xlts-reality）
+VPN_NAME="${SERVER_IP}-xlts-reality"
+VPN_LINK="vless://$UUID@$SERVER_IP:443?type=tcp&security=reality&flow=xtls-rprx-vision&fp=chrome&sni=$SNI&pbk=$PUBLIC_KEY#$VPN_NAME"
 echo "VPN 链接: $VPN_LINK"
 
 # 11. 生成二维码图片
@@ -179,7 +181,7 @@ echo "端口: 443"
 echo "UUID: $UUID"
 echo "Flow: xtls-rprx-vision"
 echo "安全性: reality"
-echo "SNI: addons.mozilla.org"
+echo "SNI: $SNI"
 echo "公钥: $PUBLIC_KEY"
 echo "VPN 链接: $VPN_LINK"
 echo "二维码图片路径: $QR_CODE_FILE"
