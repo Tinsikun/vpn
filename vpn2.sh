@@ -157,7 +157,7 @@ apt install -y qrencode -o Dpkg::Options::="--force-confnew"
 check_command "qrencode 安装"
 
 # 10. 生成 VPN 链接
-VPN_LINK="vless://$UUID@$SERVER_IP:443?type=tcp&security=reality&flow=xtls-rprx-vision&fp=chrome&sni=addons.mozilla.org&pbk=$PUBLIC_KEY#node1"
+VPN_LINK="vless://$UUID@$SERVER_IP:443?type=tcp&security=reality&flow=xtls-rprx-vision&fp=chrome&sni=addons.mozilla.org&pbk=$PUBLIC_KEY#vpn-xlts-reality"
 echo "VPN 链接: $VPN_LINK"
 
 # 11. 生成二维码图片
@@ -165,6 +165,10 @@ QR_CODE_FILE="/tmp/vpn_qr.png"
 qrencode -o $QR_CODE_FILE "$VPN_LINK"
 check_command "二维码生成"
 echo "二维码已保存至: $QR_CODE_FILE"
+
+# 在终端显示 ASCII 码二维码
+echo "在终端显示 ASCII 码二维码："
+qrencode -t ansi "$VPN_LINK"
 
 # 12. 显示部署完成信息
 echo "----------------------------------------"
